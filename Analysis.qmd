@@ -1,0 +1,532 @@
+---
+title: "Overseas Migration and Population Growth in Regional Australia"
+author: "Yexia Lyu"
+format:
+  html:
+    toc: false
+    page-layout: full
+    code-fold: true
+    code-tools: true
+    self-contained: true
+execute:
+  echo: false
+  warning: false
+  message: false
+editor: source
+---
+
+:::: panel-tabset
+
+## Project Overview
+
+Australia's recent population growth has become increasingly dependent on overseas migration. While public discussion often focuses on major cities such as Sydney and Melbourne, migration also plays an important role in shaping population change across regional Australia.
+
+This project examines the relationship between net overseas migration and population growth across Australian regional areas during 2024–25. Using population and spatial data from the Australian Bureau of Statistics (ABS), the analysis identifies regional patterns, compares migration contributions across areas, and highlights regions where overseas migration has been a major driver of growth.
+
+The analysis focuses on three questions:
+
+1. How strongly is net overseas migration associated with population growth across regional Australia?
+2. Which regional areas experienced the largest migration-driven population increases?
+3. How does the contribution of overseas migration vary geographically?
+
+**To what extent does overseas migration contribute to population growth in regional Australia?**
+
+More specifically, the analysis will examine:
+
+- Which regional areas experienced the largest population growth between 2024 and 2025?
+
+- How important was net overseas migration relative to other components of population change?
+
+- Are some regional areas more dependent on overseas migration than others?
+
+This question was chosen because population growth, regional development and migration policy are highly relevant issues in Australia. Understanding whether migration contributes to regional population growth provides useful insight into demographic change outside the major capital cities.
+
+**Data Sources**
+
+This project uses two ABS population datasets and one spatial boundary file:
+
+1.  **Population components by SA2 and above, 2021–22 to 2024–25**
+
+2.  **Population estimates by SA2 and above, 2001–2025**
+
+3.  **ABS SA4 Digital Boundary File (GDA2020 Shapefile)**
+
+The first dataset provides information on the components of population change, including natural increase, net internal migration and net overseas migration. The second dataset provides estimated resident population (ERP) counts for Australian regions.
+
+The datasets were obtained directly from the Australian Bureau of Statistics Regional Population release and are publicly available under the ABS Data Licence.
+
+In addition, a 2021 Statistical Area Level 4 (SA4) digital boundary file (GDA2020 Shapefile) was obtained from the Australian Bureau of Statistics Digital Boundary Files repository. This spatial dataset was used only for visualisation purposes when creating the regional migration map.
+
+**Data Processing**
+
+The datasets were downloaded manually from the ABS Regional Population webpage:
+
+1.  Navigate to the ABS Regional Population release.
+2.  Download “Population components by SA2 and above, 2021–22 to 2024–25”.
+3.  Download “Population estimates by SA2 and above, 2001–2025”.
+4.  Download the 2021 SA4 Digital Boundary File and save the shapefile files in the `data/geo` folder.
+5.  Save both files in the project data folder.
+
+The raw ABS Excel files contained multiple worksheets and metadata tables. Only the SA4-level tables relevant to population estimates and migration components were used.
+
+The following processing steps were undertaken:
+
+1.  Imported the relevant worksheets from both Excel files using the `readxl` package.
+
+2.  Removed metadata rows and retained only valid SA4 observations.
+
+3.  Selected variables related to population size and migration components.
+
+4.  Merged the population estimates dataset with the migration components dataset using the common SA4 identifier.
+
+5.  Created several derived variables to support the analysis:
+
+    Population change (2024–25)
+
+    Population growth rate
+
+    Overseas migration rate
+
+    Overseas migration share of population growth
+
+These derived variables were created because absolute migration numbers are not directly comparable across regions of different sizes. Using rates and shares allows meaningful comparisons between small and large SA4 regions.
+
+6.  Classified each SA4 region as either a capital city region or a regional area.
+7.  Exported the final cleaned dataset as `processed_population_migration_sa4.csv`.
+8.  Joined the processed SA4 dataset to the ABS SA4 digital boundary file using the SA4 code and created a choropleth map of overseas migration rates.
+
+The final analytical dataset contains 89 SA4 regions and 14 variables after cleaning and filtering.
+
+**Data Limitations and Ethical Considerations**
+
+The analysis uses aggregated regional statistics rather than individual-level data. Consequently, no personally identifiable information is included and there are minimal privacy concerns.
+
+Several limitations should be acknowledged. First, the data measure migration outcomes rather than migrants’ motivations, meaning the analysis cannot explain why migrants choose particular regions. Second, ABS population estimates may be revised in future releases. Third, the use of SA4 regions may conceal variation within smaller local communities. Finally, the analysis focuses on a single year (2024–25) and therefore does not capture longer-term migration trends.
+
+**Data Dictionary**
+
+Describes the key variables used in the analysis.
+
+| Variable | Description |
+|------------------------------------|------------------------------------|
+| sa4_name | Name of the SA4 region |
+| region_type | Whether the SA4 is classified as Capital city or Regional |
+| population_2024 | Estimated resident population in 2024 |
+| population_2025 | Estimated resident population in 2025 |
+| population_change_2024_25 | Change in population from 2024 to 2025 |
+| natural_increase_2024_25 | Births minus deaths |
+| net_internal_migration_2024_25 | Net movement from other parts of Australia |
+| net_overseas_migration_2024_25 | Net overseas migration |
+| overseas_migration_share_2024_25 | Net overseas migration as a share of population change |
+
+**References**
+
+Australian Bureau of Statistics (2021). Statistical Area Level 4 (SA4) Digital Boundary Files. ABS.
+
+Australian Bureau of Statistics (2025). Regional Population. ABS.
+
+Australian Bureau of Statistics (2025). Components of Population Change by SA4. ABS.
+
+Australian Bureau of Statistics (2025). Estimated Resident Population by SA4. ABS.
+
+Australian Bureau of Statistics (2025). National, state and territory population. ABS.
+
+
+```{r data-processing}
+#| echo: false
+#| warning: false
+#| message: false
+library(tidyverse)
+library(readxl)
+library(janitor)
+library(sf)
+library(ggrepel)
+library(viridis)
+# Read Dataset 1: population components by SA4
+component_names <- c(
+  "state_code", "state_name", "gccsa_code", "gccsa_name", "sa4_code", "sa4_name",
+  paste0(c(
+    "births", "deaths", "natural_increase", "internal_arrivals",
+    "internal_departures", "net_internal_migration",
+    "overseas_arrivals", "overseas_departures", "net_overseas_migration"
+  ), "_2021_22"),
+  paste0(c(
+    "births", "deaths", "natural_increase", "internal_arrivals",
+    "internal_departures", "net_internal_migration",
+    "overseas_arrivals", "overseas_departures", "net_overseas_migration"
+  ), "_2022_23"),
+  paste0(c(
+    "births", "deaths", "natural_increase", "internal_arrivals",
+    "internal_departures", "net_internal_migration",
+    "overseas_arrivals", "overseas_departures", "net_overseas_migration"
+  ), "_2023_24"),
+  paste0(c(
+    "births", "deaths", "natural_increase", "internal_arrivals",
+    "internal_departures", "net_internal_migration",
+    "overseas_arrivals", "overseas_departures", "net_overseas_migration"
+  ), "_2024_25")
+)
+
+components <- read_excel(
+  "data/population components.xlsx",
+  sheet = "Table 3",
+  skip = 6,
+  col_names = FALSE
+) |>
+  select(1:42) |>
+  set_names(component_names) |>
+  filter(!is.na(sa4_code), sa4_name != "Total Australia")
+
+# Read Dataset 2: population estimates by SA4
+population_names <- c(
+  "state_code", "state_name", "gccsa_code", "gccsa_name", "sa4_code", "sa4_name",
+  paste0("population_", 2001:2025)
+)
+
+population <- read_excel(
+  "data/population estimate.xlsx",
+  sheet = "Table 3",
+  skip = 6,
+  col_names = FALSE
+) |>
+  select(1:31) |>
+  set_names(population_names) |>
+  filter(!is.na(sa4_code), sa4_name != "Total Australia")
+# Join both datasets and create analysis variables
+processed_data <- components |>
+  select(
+    state_name, gccsa_name, sa4_code, sa4_name,
+    natural_increase_2024_25,
+    net_internal_migration_2024_25,
+    net_overseas_migration_2024_25
+  ) |>
+  left_join(
+    population |>
+      select(sa4_code, population_2024, population_2025),
+    by = "sa4_code"
+  ) |>
+  mutate(
+    region_type = if_else(str_detect(gccsa_name, "^Rest of"), "Regional", "Capital city"),
+    population_change_2024_25 = population_2025 - population_2024,
+    population_growth_rate_2024_25 = population_change_2024_25 / population_2024 * 100,
+    overseas_migration_rate_2024_25 = net_overseas_migration_2024_25 / population_2024 * 100,
+    overseas_migration_share_2024_25 = net_overseas_migration_2024_25 / population_change_2024_25
+  )
+
+# Save processed data
+write_csv(processed_data, "data/processed_population_migration_sa4.csv")
+
+
+```
+
+
+## Analysis
+
+### Is overseas migration driving population growth in regional Australia?
+
+Population growth is not evenly spread across Australia. While major cities such as Sydney, Melbourne and Brisbane often dominate discussions about migration and population pressure, regional Australia is also changing. Some regional areas are growing rapidly, while others face slower growth or population decline.
+
+Using Australian Bureau of Statistics regional population data, this analysis explores whether overseas migration has become an important driver of population growth outside Australia's capital cities.
+
+### Which regional areas grew the most?
+
+To begin, I looked at which regional SA4 areas experienced the largest population increases between 2024 and 2025.
+
+```{r top-regional-growth}
+#| fig-cap: "Regional SA4 areas with the largest population increases, 2024–25"
+#| fig-width: 10
+#| fig-height: 6
+
+migration_data <- read_csv("data/processed_population_migration_sa4.csv")
+
+top_regional_growth <- migration_data |>
+  filter(region_type == "Regional") |>
+  arrange(desc(population_change_2024_25)) |>
+  slice_head(n = 10)
+
+ggplot(
+  top_regional_growth,
+  aes(
+    x = reorder(sa4_name, population_change_2024_25),
+    y = population_change_2024_25
+  )
+) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Top 10 Regional SA4 Population Growth",
+    subtitle = "2024–25",
+    x = NULL,
+    y = "Population change"
+  ) +
+  theme_minimal()
+```
+
+Figure 1 shows the ten regional SA4 areas with the largest population increases between 2024 and 2025. The Gold Coast experienced the strongest growth, adding more than 12,000 residents during the year. Other rapidly growing regions included the Sunshine Coast, Geelong, Wide Bay and Newcastle and Lake Macquarie.
+
+However, not all coastal regions appeared among the fastest-growing areas, suggesting that coastal location was not the only factor associated with regional population growth.
+
+A notable pattern is that many of the fastest-growing regions are located near major metropolitan centres or along Australia's coastline. For example, Geelong is closely connected to Melbourne, while the Gold Coast and Sunshine Coast are strongly linked to the South-East Queensland urban corridor. This suggests that regional population growth is often concentrated in regions that combine access to employment opportunities with lifestyle advantages such as lower housing costs and coastal amenities.
+
+### What drove population growth in these regions?
+
+```{r growth-components}
+#| fig-cap: "Components of population growth in the ten fastest-growing regional SA4 areas, 2024–25"
+#| fig-width: 10
+#| fig-height: 7
+growth_components <- top_regional_growth |>
+  select(
+    sa4_name,
+    natural_increase_2024_25,
+    net_internal_migration_2024_25,
+    net_overseas_migration_2024_25
+  ) |>
+  pivot_longer(
+    cols = c(
+      natural_increase_2024_25,
+      net_internal_migration_2024_25,
+      net_overseas_migration_2024_25
+    ),
+    names_to = "component",
+    values_to = "people"
+  ) |>
+  mutate(
+    component = case_when(
+      component == "natural_increase_2024_25" ~ "Natural increase",
+      component == "net_internal_migration_2024_25" ~ "Net internal migration",
+      component == "net_overseas_migration_2024_25" ~ "Net overseas migration"
+    ),
+    component = factor(
+      component,
+      levels = c(
+        "Natural increase",
+        "Net internal migration",
+        "Net overseas migration"
+      )
+    )
+  )
+
+ggplot(
+  growth_components,
+  aes(
+    x = reorder(sa4_name, people),
+    y = people,
+    fill = component
+  )
+) +
+  geom_col() +
+  coord_flip() +
+    labs(
+    title = "Population Growth Components",
+    subtitle = "Top 10 regional SA4 areas, 2024–25",
+    x = NULL,
+    y = "People",
+    fill = "Component"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+Figure 2 decomposes population change into natural increase, net internal migration and net overseas migration. The relative importance of these components varied substantially across the fastest-growing regional areas. Net overseas migration made a major contribution to growth in the Gold Coast, while internal migration contributed more strongly in areas such as the Sunshine Coast and Wide Bay.
+
+These differences show that rapid regional growth did not arise from a single demographic process. Instead, each region experienced a distinct combination of overseas migration, internal migration and natural population change.
+
+### Where did overseas migration matter most?
+
+To compare the intensity of overseas migration across regions, I examined net overseas migration as a percentage of each area's resident population.
+
+```{r overseas-migration-rates}
+#| fig-cap: "Regional SA4 areas with the highest net overseas migration rates, 2024–25"
+#| fig-width: 11
+#| fig-height: 7
+migration_dependence <- migration_data |>
+  filter(region_type == "Regional") |>
+  arrange(desc(overseas_migration_rate_2024_25)) |>
+  slice_head(n = 15)
+
+ggplot(migration_dependence,
+       aes(x = reorder(sa4_name, overseas_migration_rate_2024_25),
+           y = overseas_migration_rate_2024_25)) +
+  geom_col(fill = "#4C78A8") +
+  geom_text(
+    aes(label = sprintf("%.2f%%", overseas_migration_rate_2024_25)),
+    hjust = -0.15,
+    size = 3
+  ) +
+  coord_flip() +
+  labs(
+    title = "Regional Areas with the Highest Overseas Migration Rates",
+    subtitle = "Regional SA4 areas, 2024–25",
+    x = NULL,
+    y = "Overseas migration rate (%)"
+  ) +
+  theme_minimal()
+```
+
+Figure 3 highlights the regional SA4 areas with the highest overseas migration rates in 2024–25. The Gold Coast recorded the highest rate at 1.31%, while several regional areas in Queensland, Western Australia and the Northern Territory also recorded relatively high rates.
+
+The distribution of high-ranking regions shows that overseas migration made a substantial contribution to population growth in selected regional areas. However, the differences between regions indicate that overseas migration alone does not explain regional population growth patterns. As shown in Figure 2, internal migration and natural increase also remained important components of population change.
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-width: 12
+#| fig-height: 8
+sa4_map <- st_read(
+  "data/geo/SA4_2021_AUST_GDA2020.shp",
+  quiet = TRUE
+)
+processed_data <- processed_data |>
+  mutate(sa4_code = as.character(sa4_code))
+
+map_data <- sa4_map |>
+  left_join(
+    processed_data,
+    by = c("SA4_CODE21" = "sa4_code")
+  )
+library(sf)
+library(ggrepel)
+
+label_regions <- c(
+  "Gold Coast",
+  "Cairns",
+  "Northern Territory - Outback"
+)
+
+map_labels <- map_data |>
+  filter(SA4_NAME21 %in% label_regions) |>
+  st_centroid()
+
+ggplot(map_data) +
+  geom_sf(
+    aes(fill = overseas_migration_rate_2024_25),
+    colour = "white",
+    linewidth = 0.1
+  ) +
+  geom_sf_text(
+    data = map_labels,
+    aes(label = SA4_NAME21),
+    size = 2.4
+  ) +
+  scale_fill_viridis_c(
+    option = "C",
+    trans = "sqrt",
+    name = "Overseas migration rate (%)"
+  ) +
+  labs(
+    title = "Overseas Migration Rates Across Australia",
+    subtitle = "SA4 areas, 2024–25"
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(size = 18, face = "bold"),
+    plot.subtitle = element_text(size = 14),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  )
+```
+
+::: {}
+Figure 4 maps overseas migration rates across Australian SA4 areas in 2024–25. Yellow and orange areas indicate higher rates, while purple areas represent lower rates. Higher overseas migration rates were concentrated in a limited number of areas, including several major urban centres and selected regional locations such as the Gold Coast and Cairns.
+
+Overall, the map shows that overseas migration was unevenly distributed across Australia. Although many regional areas recorded relatively low rates, some coastal and remote regions attracted comparatively high levels of overseas migration. The next section examines whether areas with higher overseas migration rates also experienced stronger population growth.
+:::
+
+### Is overseas migration associated with stronger regional growth?
+
+To further examine the relationship between overseas migration and regional population growth, I compared the overseas migration rate with the total population growth rate across regional SA4 areas in 2024–25.
+
+```{r migration-growth-relationship}
+#| fig-cap: "Relationship between overseas migration rates and population growth across regional SA4 areas, 2024–25"
+#| fig-width: 10
+#| fig-height: 7
+
+library(ggrepel)
+
+highlight <- processed_data |>
+  filter(
+    region_type == "Regional",
+    sa4_name %in% c(
+      "Gold Coast",
+      "Sunshine Coast",
+      "Geelong",
+      "Newcastle and Lake Macquarie",
+      "Cairns"
+    )
+  )
+
+ggplot(
+  processed_data |> filter(region_type == "Regional"),
+  aes(
+    x = overseas_migration_rate_2024_25,
+    y = population_growth_rate_2024_25
+  )
+) +
+  geom_point(
+    alpha = 0.7,
+    size = 2.5,
+    colour = "grey40"
+  ) +
+  geom_smooth(
+    method = "lm",
+    formula = y ~ x,
+    se = TRUE,
+    colour = "red",
+    linewidth = 1
+  ) +
+  geom_text_repel(
+    data = highlight,
+    aes(label = sa4_name),
+    size = 3,
+    box.padding = 0.3,
+    point.padding = 0.2,
+    max.overlaps = Inf
+  ) +
+  labs(
+    title = "Overseas Migration and Population Growth",
+    subtitle = "Regional SA4 areas, 2024–25",
+    x = "Overseas migration rate (%)",
+    y = "Population growth rate (%)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 16,
+      face = "bold"
+    ),
+    plot.subtitle = element_text(
+      size = 12
+    ),
+    axis.title = element_text(
+      size = 12
+    ),
+    axis.text = element_text(
+      size = 10
+    )
+  )
+```
+
+Figure 5 shows a positive association between overseas migration and population growth. The fitted regression line slopes upward, indicating that regional areas with higher overseas migration rates generally experienced stronger population growth.
+
+However, the relationship is not particularly strong. Considerable variation exists around the trend line, suggesting that overseas migration alone does not explain differences in population growth across regions. Several regions with relatively modest overseas migration rates still recorded strong growth, while others with higher migration rates achieved more moderate outcomes.
+
+The highlighted regions illustrate this pattern. Gold Coast and Sunshine Coast combined relatively high overseas migration rates with strong population growth, placing them toward the upper-right section of the chart. Geelong also achieved one of the highest growth rates despite a more moderate overseas migration rate, indicating that other factors contributed to its growth. Newcastle and Lake Macquarie recorded positive growth but sat closer to the centre of the distribution.
+
+Overall, the scatterplot suggests that overseas migration was associated with stronger regional population growth, but it was only one part of a broader set of demographic drivers. As shown in Figure 2, internal migration and natural increase also contributed to population growth in many regional areas.
+
+## Conclusion
+
+This analysis examined the contribution of overseas migration to population growth across regional SA4 areas in Australia during 2024–25.
+
+The results show that population growth was concentrated in a small number of coastal and metropolitan-fringe regions, particularly the Gold Coast, Sunshine Coast and Geelong. These regions recorded some of the largest population increases and experienced different combinations of overseas migration, internal migration and natural increase.
+
+Overseas migration was an important contributor to regional growth. Regions such as the Gold Coast, Cairns and the Sunshine Coast recorded some of the highest overseas migration rates, suggesting that international migration is influencing population change outside Australia's capital cities.
+
+However, overseas migration was not the only factor driving growth. The component analysis showed that internal migration and natural increase also made substantial contributions, and their relative importance varied across regions. In particular, regions such as Geelong achieved strong population growth despite more moderate overseas migration rates, indicating that other demographic processes remained important.
+
+The scatterplot analysis further showed a positive relationship between overseas migration rates and overall population growth. Regional areas with higher overseas migration rates generally experienced stronger growth, although the relationship was moderate rather than strong, suggesting that overseas migration alone cannot fully explain regional population outcomes.
+
+Overall, the findings suggest that overseas migration is helping to support population growth in regional Australia, but the fastest-growing regions tend to be those that combine overseas migration with internal migration advantages and proximity to major metropolitan centres.
+
+::::
